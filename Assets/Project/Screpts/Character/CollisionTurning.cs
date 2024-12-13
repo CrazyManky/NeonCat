@@ -6,71 +6,77 @@ namespace Project.Screpts.Character
     [RequireComponent(typeof(Rigidbody2D))]
     public class CollisionTurning : MonoBehaviour
     {
-        private Rigidbody2D _rb;
-        private float _initialRotationZ;
-        private Vector2 _lastNormal = Vector2.up;
         private Transform _currentPlatform;
+        private Transform _lastPlatform;
         private Vector3 _localPosition;
         private Quaternion _rotationOffset;
+        private Rigidbody2D _rb;
+        private Collider2D _currentPlatformCollider;
+
+        private float _reattachCooldown = 0.5f;
+        private float _lastDetachTime;
 
         private void Awake()
         {
-            _initialRotationZ = transform.eulerAngles.z;
             _rb = GetComponent<Rigidbody2D>();
         }
 
         private void OnCollisionEnter2D(Collision2D collision)
         {
-            _currentPlatform = collision.collider.transform;
-            _rb.simulated = false;
-            Vector2 normal = collision.contacts[0].normal;
-            RotateToNormal(normal);
-            AddSpinToObject(collision);
-            _localPosition = _currentPlatform.InverseTransformPoint(transform.position);
-            _rotationOffset = Quaternion.Inverse(_currentPlatform.rotation) * transform.rotation;
-        }
-
-        private void RotateToNormal(Vector2 normal)
-        {
-            float angle = Mathf.Atan2(normal.y, normal.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0, 0, angle);
-        }
-
-
-        private void AddSpinToObject(Collision2D collision)
-        {
-            Rigidbody2D otherRb = collision.rigidbody;
-
-            if (otherRb != null && !otherRb.isKinematic)
+            if (Time.time - _lastDetachTime < _reattachCooldown)
             {
-                Vector2 collisionPoint = collision.contacts[0].point;
-                Vector2 center = otherRb.worldCenterOfMass;
-
-                Vector2 impactDirection = (collisionPoint - center).normalized;
-                float torqueDirection = Vector3.Cross(impactDirection, Vector3.forward).z > 0 ? 1f : -1f;
-
-                otherRb.AddTorque(torqueDirection * 0.05f, ForceMode2D.Impulse);
+                if (collision.collider.transform == _lastPlatform)
+                    return;
             }
+
+            _currentPlatform = collision.collider.transform;
+            _currentPlatformCollider = collision.collider;
+
+            _localPosition = _currentPlatform.InverseTransformPoint(transform.position);
+
+            _rotationOffset = Quaternion.Inverse(_currentPlatform.rotation) *
+                              AlignToSurface(collision.contacts[0].normal);
+
+            _rb.simulated = false;
         }
-        
+
         private void FixedUpdate()
         {
-            // Если есть платформа, обновляем позицию и поворот котика
             if (_currentPlatform != null)
             {
-                // Обновляем позицию котика
                 transform.position = _currentPlatform.TransformPoint(_localPosition);
 
-                // Обновляем поворот котика
                 transform.rotation = _currentPlatform.rotation * _rotationOffset;
             }
         }
-        
+
         public void Detach()
         {
-            // Открепляем котика от платформы (например, при прыжке)
+            _lastPlatform = _currentPlatform;
+            _lastDetachTime = Time.time;
+
             _currentPlatform = null;
+            _currentPlatformCollider = null;
+
             _rb.simulated = true;
+        }
+
+        public bool IsOnPlatform()
+        {
+            return _currentPlatform != null;
+        }
+
+        public Collider2D GetPlatformCollider()
+        {
+            return _currentPlatformCollider;
+        }
+
+        private Quaternion AlignToSurface(Vector2 normal)
+        {
+            float angle = Mathf.Atan2(normal.y, normal.x) * Mathf.Rad2Deg - 90f;
+            transform.rotation = Quaternion.Euler(0, 0, angle);
+
+            return transform.rotation;
         }
     }
 }
